@@ -28,21 +28,30 @@ setwd(paste0(Location, 'EAVE/GPanalysis/analyses/AY4.2-variant'))
 
 ######### 1 Load data #######
 
+df_pos <- readRDS('./data/df_pos.rds')
+
 df_seq <- readRDS('./data/df_seq.rds')
 
+# Create a combine variant, vaccination status column for pyears calculations
+df_seq <- mutate(df_seq, variant_vs = as.factor(paste(variant, vs, sep = '_')))
+
+a_end <- max(c(max(df_seq$admission_date, na.rm=T), max(df_seq$discharge_date, na.rm=T))) 
+              
 rgs <- colnames(df_seq)[startsWith(colnames(df_seq), "Q")]
 
 summary_tbl_wt_chrt <- read_csv("./output/summary_table_weights_cohort.csv")
+
+summary_tbl_wt_pos <- read_csv("./output/summary_table_weights_positive.csv")
 
 summary_tbl_seq <- read_csv("./output/summary_table_weights_seq.csv")
 
 # Start date is the first AY4.2 case
 a_begin <- filter(df_seq, variant == 'AY.4.2') %>%
-           pull(Collection_Date) %>%
+           pull(specimen_date) %>%
            min()
 #a_begin <- as.Date("2020-12-08")
 
-source('./code/hospitalisation/00_functions.R')
+source('./code/hospitalisation_death/00_functions.R')
 
 fun.extract <- function(z.fit) {
   #takes a coxph filt using penalised splines and drops off the ps terms
@@ -95,9 +104,9 @@ output
 
 ## Introduction
 
-With the exception of the cohort descriptive table, the data analysed in this report are based upon all patients who were virally sequenced in Scotland between the specimen collection date of the first AY4.2 case in Scotland - 8th June 2021 - and the last date of hospital admission or discharge amongst all who were virally sequenced - 25th October 2021.
+The main analyis in this report is based upon all patients who were virally sequenced in Scotland between the specimen collection date of the first AY4.2 case in Scotland - 8th June 2021 - and the last date of hospital admission or discharge amongst all who were virally sequenced - 25th October 2021.
 
-A covid admission to hospital is taken to be individuals who have a positive covid test within 14 days of admission or who tested positive within 2 days of admission.  Also included are patients who were already in hospital and then tested positive, more than 2 days post admission.  The latter group are not included in the analysis of the risk of hospital admission from the community with covid as they are already in hospital. 
+A covid admission to hospital is taken to be individuals who have a positive covid test within 14 days prior to admission or who tested positive within 2 days of admission. Also included are patients who were already in hospital and then tested positive, more than 2 days post admission.  he latter group are not included in the analysis of the risk of hospital admission from the community with covid as they are already in hospital. 
 
 The varaiant variable takes one of the values: alpha, delta, AY4.2 and other. The delta category consists of all delta cases excluding AY4.2.
 
@@ -125,10 +134,29 @@ summary_tbl_wt_chrt$Characteristic <- replace_na(summary_tbl_wt_chrt$Characteris
 mytable(summary_tbl_wt_chrt)
 ```
 
+### All who tested positive during cohort time period
+
+```{r table_2, echo=FALSE, warning=FALSE, message = FALSE}
+
+summary_tbl_wt_pos$Characteristic <- replace_na(summary_tbl_wt_pos$Characteristic, '') 
+
+mytable(summary_tbl_wt_pos)
+```
+
+
+```{r graph_1, echo=FALSE, warning=FALSE, message = FALSE}
+
+
+knitr::include_graphics('../../output/pos_tests_by_day.png')
+
+
+```
+
+
 
 ### All who have viral sequencing data
 
-```{r table_2, echo=FALSE, warning=FALSE, message = FALSE}
+```{r table_3, echo=FALSE, warning=FALSE, message = FALSE}
 
 summary_tbl_seq$Characteristic <- replace_na(summary_tbl_seq$Characteristic, '') 
 
@@ -136,29 +164,32 @@ mytable(summary_tbl_seq)
 ```
 
 
-```{r graph_1, echo=FALSE, warning=FALSE, message = FALSE}
-z <- df_seq %>% filter(hosp_covid_emerg==1 & in_hosp_at_test == 0 & lab == 'lh') %>% 
-  group_by(admission_date, variant) %>% 
-  dplyr::summarise(N=n()) %>% 
-  filter(admission_date > a_begin + 7)
-
-z %>%  ggplot(aes(x=admission_date, y=N, colour = variant)) + geom_line() +
-  labs(x="Admission Date",y ="Number", colour="Variant", title="Emergency Hospital Admissions for Covid by day")
-```
 
 ```{r graph_2, echo=FALSE, warning=FALSE, message = FALSE}
 z <- df_seq %>% 
-  group_by(Collection_Date, variant) %>% 
+  group_by(specimen_date, variant) %>% 
   dplyr::summarise(N=n()) 
 
-z %>%  ggplot(aes(x=Collection_Date, y=N, colour=variant)) + geom_line() +
-  labs(x="Specimen Date",y ="Number", title="Number of cases per day", colour="Variant") + scale_y_log10()
+grid <- expand.grid(seq(a_begin, a_end, by="days"), c('delta', 'AY.4.2', 'other'))
+        
+names(grid) <- c('specimen_date', 'variant')  
+       
+grid <- grid %>%
+       left_join(z) %>%
+       replace_na( list(N = 0) )
+
+grid %>%  ggplot(aes(x=specimen_date, y=N, colour = variant)) + geom_point() +
+  geom_smooth() +
+  labs(x="Specimen Date",y ="Number", title="Number of cases per day", colour="Variant") +         scale_y_log10()
+  
+# z %>%  ggplot(aes(x=specimen_date, y=N, colour=variant)) + geom_line() +
+#   labs(x="Specimen Date",y ="Number", title="Number of cases per day", colour="Variant") + scale_y_log10()
 ```
 
 ### All who were sequenced, stratified by whether they were in hospital at specimen date 
 
 
-```{r table_3, echo=FALSE, warning=FALSE, message = FALSE}
+```{r table_4, echo=FALSE, warning=FALSE, message = FALSE}
 
 explanatory <- c("Sex", 
                  "ageYear", 
@@ -204,6 +235,45 @@ z.tab <- pyears(fmla.plot, data=df_seq, in_hosp_at_test == 0 & lab == 'lh', data
 mytable(z.tab)
 
 ```
+
+```{r analysis_0_pyears2, echo=FALSE, warning=FALSE, message = FALSE}
+
+z.rv <- "hosp_covid_emerg" 
+z.rv.time <- "time_to_hosp" 
+
+fmla.plot <- as.formula(paste("Surv(",z.rv.time,",",z.rv,") ~  variant_vs "))
+z.tab <- pyears(fmla.plot, data=df_seq, in_hosp_at_test == 0 & lab == 'lh', data.frame=TRUE)$data
+
+mytable(z.tab)
+
+```
+
+```{r graph_4, echo=FALSE, warning=FALSE, message = FALSE}
+z <- df_seq %>% filter(hosp_covid_emerg==1 & in_hosp_at_test == 0 & lab == 'lh') %>% 
+  group_by(admission_date, variant) %>% 
+  dplyr::summarise(N=n()) %>% 
+  filter(admission_date > a_begin)
+
+grid <- expand.grid(seq(a_begin, a_end, by="days"), c('delta', 'AY.4.2', 'other'))
+        
+names(grid) <- c('admission_date', 'variant')  
+       
+grid <- grid %>%
+       left_join(z) %>%
+       replace_na( list(N = 0) )
+
+grid %>%  ggplot(aes(x=admission_date, y=N, colour = variant)) + geom_point() +
+  scale_y_continuous(limits = c(0, 12), breaks = 0:max(z$N + 1)) +
+  geom_smooth() +
+  labs(x="Admission Date",y ="Number", colour="Variant", title="Emergency Covid hospital admissions by day")
+
+# 
+# z %>%  ggplot(aes(x=admission_date, y=N, colour = variant)) + geom_point() +
+#   scale_y_continuous(limits = c(0, 12), breaks = 0:max(z$N + 1)) +
+#   geom_smooth() +
+#   labs(x="Admission Date",y ="Number", colour="Variant", title="Emergency Covid hospital admissions by day")
+```
+
 
 ### Number of emergency covid hospital admission from community by vaccination status at specimen date
 
@@ -349,6 +419,37 @@ mytable(z.tab)
 
 ```
 
+```{r analysis_1_pyears2, echo=FALSE, warning=FALSE, message = FALSE}
+
+fmla.plot <- as.formula(paste("Surv(",z.rv.time,",",z.rv,") ~  variant_vs "))
+z.tab <- pyears(fmla.plot, data=df_seq, in_hosp_at_test == 0 & lab == 'lh', data.frame=TRUE)$data
+
+mytable(z.tab)
+
+```
+
+
+```{r analysis_1_event_hist, echo=FALSE, warning=FALSE, message = FALSE}
+z <- df_seq %>% filter(death_covid==1 & in_hosp_at_test == 0 & lab == 'lh') %>% 
+  group_by(admission_date, variant) %>% 
+  dplyr::summarise(N=n()) %>% 
+  filter(admission_date > a_begin)
+
+grid <- expand.grid(seq(a_begin, a_end, by="days"), c('delta', 'AY.4.2', 'other'))
+        
+names(grid) <- c('admission_date', 'variant')  
+       
+grid <- grid %>%
+       left_join(z) %>%
+       replace_na( list(N = 0) )
+
+grid %>%  ggplot(aes(x=admission_date, y=N, colour = variant)) + geom_point() +
+  scale_y_continuous(limits = c(0, 3), breaks = 0:max(z$N + 1)) +
+  labs(x="Admission Date",y ="Number", colour="Variant", title="Covid deaths by day")
+
+```
+
+
 ### Number of covid deaths by vaccination status at specimen date
 
 
@@ -373,6 +474,7 @@ plot(z.survfit, fun="event", col=1:4, xlab="Days from Test to death",
 legend("topleft",col=1:4, lty=1, legend=levels(df_seq$variant) )
 
 ```
+
 
 
 ### Model selection statistics
@@ -473,6 +575,38 @@ mytable(z.tab)
 
 ```
 
+```{r analysis_2_pyears2, echo=FALSE, warning=FALSE, message = FALSE}
+
+fmla.plot <- as.formula(paste("Surv(",z.rv.time,",",z.rv,") ~  variant_vs "))
+z.tab <- pyears(fmla.plot, data=df_seq, in_hosp_at_test == 0 & lab == 'lh', data.frame=TRUE)$data
+
+mytable(z.tab)
+
+```
+
+
+```{r analysis_2_event_hist, echo=FALSE, warning=FALSE, message = FALSE}
+z <- df_seq %>% filter(hosp_death_covid==1 & in_hosp_at_test == 0 & lab == 'lh') %>%
+  mutate(event_date = pmin(NRS.Date.Death, admission_date, na.rm = TRUE) ) %>%
+  group_by(event_date, variant) %>% 
+  dplyr::summarise(N=n())  
+
+
+grid <- expand.grid(seq(a_begin, a_end, by="days"), c('delta', 'AY.4.2', 'other'))
+        
+names(grid) <- c('event_date', 'variant')  
+       
+grid <- grid %>%
+       left_join(z) %>%
+       replace_na( list(N = 0) )
+
+grid %>%  ggplot(aes(x=event_date, y=N, colour = variant)) + geom_point() +
+  scale_y_continuous(limits = c(0, 12), breaks = 0:max(z$N + 1)) +
+  geom_smooth() +
+  labs(x="Event date",y ="Number", colour="Variant", title="Emergency covid hospital admissions or covid deaths by day")
+
+```
+
 ### Number of emergency covid hospital admissions or covid deaths by vaccination status at specimen date
 
 
@@ -483,6 +617,15 @@ z <- df_seq.fit %>% group_by(vs) %>% dplyr::summarise(N=n(), Died=sum(hosp_death
 
 mytable(z)
 
+```
+
+### Number of covid deaths that were not covid hospitalisations by variant
+
+```{r death_not_hosp, echo=FALSE, warning=FALSE, message = FALSE}
+filter(df_seq, death_covid == 1 & hosp_covid == 0 & in_hosp_at_test == 0 & lab == 'lh') %>%
+  group_by(variant) %>%
+  summarise(n = n()) %>%
+  mytable()
 ```
 
 ### Cumulative risk of emergency covid hospital admission or covid deaths by variant
@@ -565,7 +708,21 @@ plot_HR(z.fit, 1)
 
 plot_HR(z.fit, 2)
 
+
+
+fmla.test <- as.formula(paste("Surv(",z.rv.time,",",z.rv,") ~   pspline(ageYear) + pspline(days)  + Sex  + simd +  n_risk_gps + variant + variant*vs "))
+
+z.fit <- coxph(fmla.test , data=df_seq.fit, subset = in_hosp_at_test == 0 & lab == 'lh')
+z <- fun.extract(z.fit)
+
+drop1(z.fit, scope ~ variant:vs, test="Chisq")
+
+
 ```
+
+
+
+
 
 
 The NA in the table above is due to the fact that the category has zero events
@@ -588,4 +745,92 @@ filter(df_seq, variant == 'other', vs =='v2_28+', in_hosp_at_test == 0, lab == '
   select(hosp_covid_emerg) %>%
   table()
 ```
+
+
+
+#### Hazard Ratios for emergency covid hospitalisation or covid death from community testing, with interaction between variant and vaccine status by vaccine type
+
+```{r analysis_2_HR_int_type, echo=FALSE, warning=FALSE, message = FALSE}
+
+fmla.final <- as.formula(paste("Surv(",z.rv.time,",",z.rv,") ~   pspline(ageYear) + pspline(days)  + Sex  + simd +  n_risk_gps + variant + variant:vs_type "))
+
+z.fit <- coxph(fmla.final , data=df_seq.fit, subset = in_hosp_at_test == 0 & lab == 'lh')
+z <- fun.extract(z.fit)
+
+mytable(z)
+
+# Plot HRs for spline terms
+plot_HR(z.fit, 1)
+
+plot_HR(z.fit, 2)
+
+```
+
+
+```{r analysis_2_HR_int_type_notMO, echo=FALSE, warning=FALSE, message = FALSE}
+
+fmla.final <- as.formula(paste("Surv(",z.rv.time,",",z.rv,") ~   pspline(ageYear) + pspline(days)  + Sex  + simd +  n_risk_gps + variant + variant:vs_type "))
+
+z_df <- df_seq.fit %>% 
+        filter( is.na(vacc_type) | vacc_type %in% c('AZ', 'PB') ) %>% 
+        filter( is.na(vacc_type_2) | vacc_type_2 %in% c('AZ', 'PB'))
+
+z.fit <- coxph(fmla.final , data = z_df, subset = in_hosp_at_test == 0 & lab == 'lh')
+z <- fun.extract(z.fit)
+
+mytable(z)
+
+# Plot HRs for spline terms
+plot_HR(z.fit, 1)
+
+plot_HR(z.fit, 2)
+
+```
+
+
+
+
+#### Time to covid emergency hospitalisation or death amongst all who tested positive, using the date of most recent positive test
+
+```{r analysis_2_HR_int_pos, echo=FALSE, warning=FALSE, message = FALSE}
+
+fmla.final <- as.formula(paste("Surv(",z.rv.time,",",z.rv,") ~   pspline(ageYear) + pspline(days)  + Sex  + simd +  n_risk_gps + vs "))
+
+z.fit <- coxph(fmla.final , data=df_pos, subset = in_hosp_at_test == 0 & lab == 'lh')
+z <- fun.extract(z.fit)
+
+mytable(z)
+
+# Plot HRs for spline terms
+plot_HR(z.fit, 1)
+
+plot_HR(z.fit, 2)
+
+```
+
+
+
+```{r analysis_2_HR_int_type_pos, echo=FALSE, warning=FALSE, message = FALSE}
+
+fmla.final <- as.formula(paste("Surv(",z.rv.time,",",z.rv,") ~   pspline(ageYear) + pspline(days)  + Sex  + simd +  n_risk_gps + vs_type "))
+
+z.fit <- coxph(fmla.final , data=df_pos, subset = in_hosp_at_test == 0 & lab == 'lh')
+z <- fun.extract(z.fit)
+
+mytable(z)
+
+# Plot HRs for spline terms
+plot_HR(z.fit, 1)
+
+plot_HR(z.fit, 2)
+
+```
+
+
+
+
+
+
+
+
 

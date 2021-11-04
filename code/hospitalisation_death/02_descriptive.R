@@ -10,7 +10,7 @@
 # Libraries
 library("finalfit")
 
-source('./code/hospitalisation/00_functions.R')
+source('./code/hospitalisation_death/00_functions.R')
 
 ##### 1 Summary tables (weights) ####
 # Uses function summary_factorlist_wt from 00_functions.R
@@ -36,7 +36,6 @@ explanatory <- c("Total",
                  'EAVE_Smoke',
                  'EAVE_BP')
 
-
 summary_tbl_wt_chrt <- summary_factorlist_wt(df_cohort, "Total", explanatory = explanatory) 
 
 names(summary_tbl_wt_chrt) <- c('Characteristic', 'Levels', 'Total')
@@ -48,11 +47,15 @@ summary_tbl_wt_chrt[1, 'Levels'] <- ''
 write.csv(summary_tbl_wt_chrt , "./output/summary_table_weights_cohort.csv", row.names = F)
 
 
-# Summary table for those who were sequenced
+## Summary table for all who tested positive
+
+df_pos$Total = 'Total'
+
 explanatory <- c("Sex", 
                  "ageYear", 
                  "age_grp",
                  "vs",
+                 "vs_type",
                  "in_hosp_at_test",
                  "lab",
                  "hosp_covid",
@@ -69,6 +72,20 @@ explanatory <- c("Sex",
                  rgs,
                  'EAVE_Smoke',
                  'EAVE_BP')
+
+summary_tbl_wt_pos <- summary_factorlist_wt(df_pos, "Total", explanatory = explanatory) 
+
+names(summary_tbl_wt_pos) <- c('Characteristic', 'Levels', 'Total')
+
+summary_tbl_wt_pos$Characteristic[duplicated(summary_tbl_wt_pos$Characteristic)] <- ''
+
+summary_tbl_wt_pos[1, 'Levels'] <- ''
+
+write.csv(summary_tbl_wt_pos , "./output/summary_table_weights_positive.csv", row.names = F)
+
+
+
+# Summary table for those who were sequenced
 
 summary_tbl_seq <- summary_factorlist(df_seq, "variant", explanatory = explanatory, add_col_totals = TRUE) %>%
                   rename(Characteristic = label, Levels = levels)
