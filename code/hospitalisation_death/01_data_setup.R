@@ -224,9 +224,11 @@ df_cohort <- df_cohort %>%
 
 ########## 3 Create study datatset of all who tested positive  ########################
 
-df_pos <- filter(df_cohort, test_before_begin == 'post-start' &
-                   ageYear >= 18 & flag_incon == 0) %>%
-          # Create columns for lab type, and variants
+# Use all positive tests
+df_pos <- Positive_Tests %>%
+          filter(test_before_begin == 'post-start') %>%
+          left_join(df_cohort) %>%
+          filter(ageYear >= 18 & flag_incon == 0) %>%
           mutate(lab = if_else(test_result_record_source == "ECOSS", "nhs","lh")) 
 
 # Add all hospitalisations. This is important because some will be in hospital at time of test
@@ -451,6 +453,9 @@ df_seq <- df_seq %>% left_join(covid_icu_death %>% dplyr::select(-SpecimenDate) 
                                      as.numeric(date_icu_death - specimen_date))) %>% 
   mutate(time_to_icu_death = if_else(time_to_icu_death < 0, 0, time_to_icu_death)) %>%
   mutate(time_to_icu_death = if_else(time_to_icu_death==0,0.1,time_to_icu_death))
+
+df_pos <- mutate(df_pos, sequenced = ifelse( EAVE_LINKNO %in% df_seq$EAVE_LINKNO, 1, 0))
+
 
 ####################### 5 Save ###############################################################
 

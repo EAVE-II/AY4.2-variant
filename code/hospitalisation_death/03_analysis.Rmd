@@ -768,12 +768,15 @@ plot_HR(z.fit, 2)
 
 
 ```{r analysis_2_HR_int_type_notMO, echo=FALSE, warning=FALSE, message = FALSE}
+df_seq.fit <- df_seq %>% filter(in_hosp_at_test == 0 & lab == 'lh')
 
-fmla.final <- as.formula(paste("Surv(",z.rv.time,",",z.rv,") ~   pspline(ageYear) + pspline(days)  + Sex  + simd +  n_risk_gps + variant + variant:vs_type "))
+fmla.final <- as.formula(paste("Surv(",z.rv.time,",",z.rv,") ~   pspline(ageYear) + pspline(days)  + Sex  + simd +  n_risk_gps + var + var:vs_t "))
 
 z_df <- df_seq.fit %>% 
         filter( is.na(vacc_type) | vacc_type %in% c('AZ', 'PB') ) %>% 
-        filter( is.na(vacc_type_2) | vacc_type_2 %in% c('AZ', 'PB'))
+        filter( is.na(vacc_type_2) | vacc_type_2 %in% c('AZ', 'PB')) %>%
+        dplyr::rename(vs_t = vs_type,
+                     var = variant)
 
 z.fit <- coxph(fmla.final , data = z_df, subset = in_hosp_at_test == 0 & lab == 'lh')
 z <- fun.extract(z.fit)
@@ -791,6 +794,8 @@ plot_HR(z.fit, 2)
 
 
 #### Time to covid emergency hospitalisation or death amongst all who tested positive, using the date of most recent positive test
+
+This analysis uses everyone who tested positive, rather than only those who were sequenced.
 
 ```{r analysis_2_HR_int_pos, echo=FALSE, warning=FALSE, message = FALSE}
 
