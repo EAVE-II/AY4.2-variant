@@ -91,10 +91,6 @@ write.csv(summary_tbl_wt_chrt , "./output/summary_table_weights_cohort.csv", row
 
 ## Summary table for all who tested positive
 
-bob <- df_pos
-
-df_pos <- bob
-
 df_pos$Total = 'Total'
 
 convert_to_factor_cols <- c('in_hosp_at_test', 'lab', 'hosp_covid', 'hosp_covid_emerg',
@@ -177,17 +173,18 @@ z <- wgs %>% select(EAVE_LINKNO, specimen_date) %>%
   filter(!duplicated(paste(EAVE_LINKNO, specimen_date)))  %>%
   replace_na(list(sequenced = 0)) %>%
   group_by(specimen_date, sequenced) %>%
-  summarise(N=n())
+  summarise(N=n()) %>%
+  mutate(sequenced = case_when(sequenced == 1 ~ 'Sequenced',
+                               sequenced == 0 ~ 'Not sequenced'))
 
 
-grid <- expand.grid(seq(a_begin, a_end, by="days"), c(0, 1))
+grid <- expand.grid(seq(a_begin, a_end, by="days"), c('Not sequenced', 'Sequenced'))
 
 names(grid) <- c('specimen_date', 'sequenced')  
 
 grid <- grid %>%
   left_join(z) %>%
-  replace_na( list(N = 0)) %>%
-  mutate(sequenced = as.logical(sequenced))
+  replace_na( list(N = 0)) 
 
 # For reasons unknown, geom_smooth doesn't like it when I give it a sequence of dates
 # as the value for zseq. Need to give it numeric value of days starting at 1970-01-01
@@ -199,9 +196,10 @@ smooth_end = smooth_start + as.numeric(a_end - a_begin) -14
 grid %>%  ggplot(aes(x=specimen_date, y=N, colour = sequenced)) + geom_point() +
   # Delay of ~2 weeks in sequencing data, so truncate smooth 2 weeks before end
   geom_smooth(xseq = smooth_start:smooth_end) +
-  labs(x="Specimen date",y ="Number", colour="Sequenced", title="Positive tests by day")
+  labs(x="Specimen date",y ="Number", colour="Sequenced", title="Positive tests by day") + 
+  theme(legend.title = element_blank()) 
 
-ggsave("./output/pos_tests_by_day.png")
+ggsave("./output/pos_tests_by_day.png", width=14, height=10, unit="cm")
 
 
 # Cases by day and variant
@@ -231,7 +229,7 @@ grid %>%  ggplot(aes(x=specimen_date, y=N, colour = variant)) + geom_point() +
   labs(x="Specimen Date",y ="Number", title="Number of cases per day", colour="Variant") +
   scale_y_log10()
 
-ggsave("./output/cases_by_day.png")
+ggsave("./output/cases_by_day.png", width=14, height=10, unit="cm")
 
 
 
@@ -256,7 +254,7 @@ grid %>%  ggplot(aes(x=event_date, y=N, colour = variant)) + geom_point() +
   geom_smooth(xseq = smooth_start:smooth_end) +
   labs(x="Event date",y ="Number", colour="Variant", title="Emergency covid hospital admissions or covid deaths by day")
 
-ggsave("./output/hosp_death_by_variant_day.png")
+ggsave("./output/hosp_death_by_variant_day.png", width=14, height=10, unit="cm")
 
 
 
@@ -285,6 +283,30 @@ write.csv(z.tab, "./output/pyears_by_variant_vaccine_status.csv")
 
 
 
+# Person years to event by variant and vaccination status by sex, simd and number 
+# of risk groups
+
+fmla.plot <- as.formula(paste("Surv(",z.rv.time,",",z.rv,") ~ Sex "))
+
+z.tab1 <- pyears(fmla.plot, data=df_seq, in_hosp_at_test == 0 & lab == 'lh', data.frame=TRUE)$data %>%
+          rename(Variable = Sex)
+
+fmla.plot <- as.formula(paste("Surv(",z.rv.time,",",z.rv,") ~  simd  "))
+
+z.tab2 <- pyears(fmla.plot, data=df_seq, in_hosp_at_test == 0 & lab == 'lh', data.frame=TRUE)$data %>%
+  rename(Variable = simd)
+
+fmla.plot <- as.formula(paste("Surv(",z.rv.time,",",z.rv,") ~  n_risk_gps "))
+
+z.tab3 <- pyears(fmla.plot, data=df_seq, in_hosp_at_test == 0 & lab == 'lh', data.frame=TRUE)$data %>%
+  rename(Variable = n_risk_gps)
+
+z.tab <- bind_rows(z.tab1, z.tab2, z.tab3) %>%
+          mutate(pyears = round(pyears))
+
+write.csv(z.tab, "./output/pyears_by_sex_simd_n_risk_gps.csv")
+
+
 ################### 3 Analysis ##########################
 
 # Hazard Ratios for emergency covid hospitalisation or covid death from community
@@ -300,11 +322,11 @@ write.csv(z, "./output/hosp_death_HR.csv")
 # Plot HRs for spline terms
 plot_HR(z.fit, 1)
 
-ggsave("./output/hosp_death_HR_age.png")
+ggsave("./output/hosp_death_HR_age.png", width=14, height=10, unit="cm")
 
 plot_HR(z.fit, 2)
 
-ggsave("./output/hosp_death_HR_days.png")
+ggsave("./output/hosp_death_HR_days.png", width=14, height=10, unit="cm")
 
 
 
@@ -326,14 +348,10 @@ write.csv(z, "./output/hosp_death_HR_int.csv")
 # Plot HRs for spline terms
 plot_HR(z.fit, 1)
 
-ggsave("./output/hosp_death_HR_int_age.png")
+ggsave("./output/hosp_death_HR_int_age.png", width=14, height=10, unit="cm")
 
 plot_HR(z.fit, 2)
 
-ggsave("./output/hosp_death_HR_int_days.png")
+ggsave("./output/hosp_death_HR_int_days.png", width=14, height=10, unit="cm")
 
 
-
-
-  
-  
